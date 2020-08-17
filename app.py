@@ -1,8 +1,22 @@
 # -*- coding: utf-8 -*-
 
-from flask import Flask,render_template
+import os, sys
+from flask import Flask, render_template
 from flask import url_for
+from flask_sqlalchemy import SQLAlchemy
+import click
 app = Flask(__name__)  # 程序对象
+
+WIN = sys.platform.startswith('win')
+if WIN: # 如果是 Windows 系统，使用三个斜线
+    prefix = 'sqlite:///'
+else: # 否则使用四个斜线
+    prefix = 'sqlite:////'
+
+app.config['SQLALCHEMY_DATABASE_URI'] = prefix + os.path.join(app.root_path, 'data.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False # 关闭对模型修改的监控
+# 在扩展类实例化前加载配置
+db = SQLAlchemy(app)
 
 name = 'Grey Li'
 movies = [{'title': 'My Neighbor Totoro', 'year': '1988'},
@@ -24,7 +38,8 @@ movies = [{'title': 'My Neighbor Totoro', 'year': '1988'},
 
 @app.route('/')
 def index():
-    return render_template('index.html', name=name, movies=movies)
+    movies = Movie.query.all()
+    return render_template('index.html', movies=movies)
 
 
 @app.route('/user/<name>')
@@ -45,3 +60,33 @@ def test_url_for():
     return 'Test page'
 
 
+@app.cli.command() # 注册为命令
+@click.option('--drop', is_flag=True, help='Create after drop.') # 设置选项
+def initdb(drop):
+    """Initialize the database."""
+    if drop: # 判断是否输入了选项
+        db.drop_all()
+    db.create_all()
+    click.echo('Initialized database.')
+
+
+@app.errorhandler(404) # 传入要处理的错误代码
+def page_not_found(e):
+    return render_template('404.html'), 404
+
+
+@app.context_processor
+def inject_user(): # 函数名可以随意修改
+    user = User.query.first()
+    return dict(user=user) # 需要返回字典，等同于return {'user': user}
+
+
+class User(db.Model): # 表名将会是 user（自动生成，小写处理）
+    id = db.Column(db.Integer, primary_key=True) # 主键
+    name = db.Column(db.String(20)) # 名字
+
+
+class Movie(db.Model): # 表名将会是 movie
+    id = db.Column(db.Integer, primary_key=True) # 主键
+    title = db.Column(db.String(60)) # 电影标题
+    year = db.Column(db.String(4)) #
