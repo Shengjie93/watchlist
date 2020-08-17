@@ -2,7 +2,7 @@
 
 import os, sys
 from flask import Flask, render_template
-from flask import url_for
+from flask import request, url_for, redirect, flash
 from flask_sqlalchemy import SQLAlchemy
 import click
 app = Flask(__name__)  # 程序对象
@@ -15,6 +15,7 @@ else: # 否则使用四个斜线
 
 app.config['SQLALCHEMY_DATABASE_URI'] = prefix + os.path.join(app.root_path, 'data.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False # 关闭对模型修改的监控
+app.config['SECRET_KEY'] = 'dev'
 # 在扩展类实例化前加载配置
 db = SQLAlchemy(app)
 
@@ -36,10 +37,26 @@ movies = [{'title': 'My Neighbor Totoro', 'year': '1988'},
 #     return '<h1>Hello Totoro!</h1><img src="http://helloflask.com/totoro.gif">'
 
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
+    # movies = Movie.query.all()
+    # return render_template('index.html', movies=movies)
+    if request.method == 'POST':  # 判断是否是 POST 请求
+        # 获取表单数据
+        title = request.form.get('title')  # 传入表单对应输入字段的name
+        year = request.form.get('year')
+        if not title or not year or len(year) != 4 or len(title)> 60:
+            flash('Invalid input.')
+            return redirect(url_for('index'))
+        movie = Movie(title=title, year=year)
+        db.session.add(movie)
+        db.session.commit()
+        flash('Item created.')
+        return redirect(url_for('index'))
+
+    user = User.query.first()
     movies = Movie.query.all()
-    return render_template('index.html', movies=movies)
+    return render_template('index.html', user=user, movies=movies)
 
 
 @app.route('/user/<name>')
@@ -79,6 +96,32 @@ def page_not_found(e):
 def inject_user(): # 函数名可以随意修改
     user = User.query.first()
     return dict(user=user) # 需要返回字典，等同于return {'user': user}
+
+
+@app.route('/movie/edit/<int:movie_id>', methods=['GET', 'POST'])
+def edit(movie_id):
+    movie = Movie.query.get_or_404(movie_id)
+    if request.method == 'POST':  # 处理编辑表单的提交请求
+        title = request.form['title']
+        year = request.form['year']
+        if not title or not year or len(year) > 4 or len(title)> 60:
+            flash('Invalid input.')
+            return redirect(url_for('edit', movie_id=movie_id))
+        movie.title = title  # 更新标题
+        movie.year = year  # 更新年份
+        db.session.commit()  # 提交数据库会话
+        flash('Item updated.')
+        return redirect(url_for('index'))
+    return render_template('edit.html', movie=movie)
+
+
+@app.route('/movie/delete/<int:movie_id>', methods=['POST'])
+def delete(movie_id):
+    movie = Movie.query.get_or_404(movie_id) # 获取电影记录
+    db.session.delete(movie) # 删除对应的记录
+    db.session.commit() # 提交数据库会话
+    flash('Item deleted.')
+    return redirect(url_for('index'))
 
 
 class User(db.Model): # 表名将会是 user（自动生成，小写处理）
